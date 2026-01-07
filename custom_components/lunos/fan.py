@@ -11,6 +11,7 @@ import logging
 import time
 
 import voluptuous as vol
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.components.fan import (
     ATTR_PRESET_MODES,
     ENTITY_ID_FORMAT,
@@ -28,8 +29,8 @@ from homeassistant.const import (
 )
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity import async_generate_entity_id
-from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util.percentage import (
     ordered_list_item_to_percentage,
@@ -60,28 +61,56 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 )
 
 
-# pylint: disable=unused-argument
-async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
-    """Initialize the LUNOS fans from config."""
-    name = config.get(CONF_NAME, DEFAULT_LUNOS_NAME)
+def _async_register_entity_services(hass) -> None:
+    domain_data = hass.data.setdefault(LUNOS_DOMAIN, {})
+    if domain_data.get("services_registered"):
+        return
 
+    platform = entity_platform.async_get_current_platform()
+    platform.async_register_entity_service(
+        SERVICE_CLEAR_FILTER_REMINDER,
+        {},
+        "async_clear_filter_reminder",
+    )
+    platform.async_register_entity_service(
+        SERVICE_TURN_ON_SUMMER_VENTILATION,
+        {},
+        "async_turn_on_summer_ventilation",
+    )
+    platform.async_register_entity_service(
+        SERVICE_TURN_OFF_SUMMER_VENTILATION,
+        {},
+        "async_turn_off_summer_ventilation",
+    )
+
+    domain_data["services_registered"] = True
+
+
+def _create_fan_from_config(hass, config) -> "LUNOSFan":
+    name = config.get(CONF_NAME, DEFAULT_LUNOS_NAME)
     relay_w1 = config.get(CONF_RELAY_W1)
     relay_w2 = config.get(CONF_RELAY_W2)
     default_speed = config.get(CONF_DEFAULT_SPEED)
 
-    LOG.info(f"LUNOS fan '{name}' using relays W1={relay_w1}, W2={relay_w2}'")
+    LOG.info("LUNOS fan '%s' using relays W1=%s, W2=%s", name, relay_w1, relay_w2)
+    return LUNOSFan(hass, config, name, relay_w1, relay_w2, default_speed)
 
-    fan = LUNOSFan(hass, config, name, relay_w1, relay_w2, default_speed)
+
+async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities) -> None:
+    """Set up the LUNOS fan entity from a config entry."""
+    _async_register_entity_services(hass)
+
+    fan = _create_fan_from_config(hass, dict(entry.data))
     async_add_entities([fan], update_before_add=True)
 
-    # expose service APIs
-    component = EntityComponent(LOG, LUNOS_DOMAIN, hass)
-    for service, method in {
-        SERVICE_CLEAR_FILTER_REMINDER: 'async_clear_filter_reminder',
-        SERVICE_TURN_ON_SUMMER_VENTILATION: 'async_turn_on_summer_ventilation',
-        SERVICE_TURN_OFF_SUMMER_VENTILATION: 'async_turn_off_summer_ventilation',
-    }.items():
-        component.async_register_entity_service(service, {}, method)
+
+# pylint: disable=unused-argument
+async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
+    """Initialize the LUNOS fans from config."""
+    _async_register_entity_services(hass)
+
+    fan = _create_fan_from_config(hass, config)
+    async_add_entities([fan], update_before_add=True)
 
     return True
 

@@ -1,6 +1,7 @@
 {
   "domain": "lunos",
   "name": "LUNOS Heat Recovery Ventilation",
+  "config_flow": true,
   "codeowners": ["@rsnodgrass"],
   "dependencies": [],
   "documentation": "https://github.com/rsnodgrass/hass-lunos/",

@@ -1,7 +1,7 @@
 """LUNOS Ventilation Fan Control for Home Assistant.
 
-This integration currently uses legacy YAML configuration and forwards setup to
-the fan platform.
+This custom integration supports config entries (UI config flow) and can import
+legacy YAML configuration.
 
 https://github.com/rsnodgrass/hass-lunos
 """
@@ -12,12 +12,10 @@ from typing import Any
 
 import yaml
 
-try:
-    # Newer Home Assistant versions
-    from homeassistant.helpers.discovery import async_load_platform
-except ImportError:  # pragma: no cover
-    async_load_platform = None
-    from homeassistant.helpers.discovery import load_platform
+from homeassistant import config_entries
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.typing import ConfigType
 
 from .const import LUNOS_DOMAIN
 
@@ -25,6 +23,8 @@ LOG = logging.getLogger(__name__)
 
 LUNOS_CODING_CONFIG: dict[str, Any] = {}
 _CODINGS_FILE = Path(__file__).with_name('lunos-codings.yaml')
+
+PLATFORMS: list[Platform] = [Platform.FAN]
 
 
 def _load_coding_config() -> None:
@@ -41,22 +41,50 @@ def _load_coding_config() -> None:
         LUNOS_CODING_CONFIG = {}
 
 
-async def async_setup(hass, config):
-    # Load static model/coding metadata before platform import so the fan platform
-    # schema (vol.In(LUNOS_CODING_CONFIG.keys())) has the expected keys.
+def async_get_coding_keys(hass: HomeAssistant) -> list[str]:
+    """Return the available controller coding keys.
+
+    The list is backed by `lunos-codings.yaml` which ships with the integration.
+    """
+
+    if not LUNOS_CODING_CONFIG:
+        _load_coding_config()
+    return list(LUNOS_CODING_CONFIG.keys())
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up LUNOS.
+
+    If legacy YAML is present, start an import flow to migrate it into a config
+    entry.
+    """
+
     if not LUNOS_CODING_CONFIG:
         _load_coding_config()
 
-    LOG.info("LUNOS controller codings supported: %s", list(LUNOS_CODING_CONFIG.keys()))
-
-    conf = config.get(LUNOS_DOMAIN)
-    if conf is None:
-        LOG.info("No LUNOS configuration found")
-        return True
-
-    if async_load_platform is not None:
-        await async_load_platform(hass, "fan", LUNOS_DOMAIN, None, conf)
-    else:  # pragma: no cover
-        load_platform(hass, "fan", LUNOS_DOMAIN, None, conf)
+    if conf := config.get(LUNOS_DOMAIN):
+        hass.async_create_task(
+            hass.config_entries.flow.async_init(
+                LUNOS_DOMAIN,
+                context={"source": config_entries.SOURCE_IMPORT},
+                data=conf,
+            )
+        )
 
     return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEntry) -> bool:
+    """Set up LUNOS from a config entry."""
+
+    if not LUNOS_CODING_CONFIG:
+        _load_coding_config()
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: config_entries.ConfigEntry) -> bool:
+    """Unload a config entry."""
+
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

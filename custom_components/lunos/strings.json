@@ -1,0 +1,18 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up LUNOS ventilation",
+        "description": "Configure the two relay switches that control your LUNOS fan.",
+        "data": {
+          "name": "Name",
+          "relay_w1": "Relay W1 switch",
+          "relay_w2": "Relay W2 switch",
+          "controller_coding": "Controller coding",
+          "default_speed": "Default speed",
+          "fan_count": "Fan count"
+        }
+      }
+    }
+  }
+}
